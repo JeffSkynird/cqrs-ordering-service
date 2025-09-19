@@ -36,7 +36,15 @@ These endpoints lay the groundwork for the broader CQRS architecture that will b
   http_request_duration_seconds_count{method="GET",path="/healthz",status="200"} 3
   ```
 
+## Exercise the Event Store
+Run the manual script that appends an event and then replays the JSONL file:
 
+```bash
+cd app/node
+npx ts-node scripts/manual-event-store.ts
+```
+
+The script ensures `data/events.jsonl` exists, writes a new event with an incremental `offset`, and prints all stored events.
 
 ## Roadmap Highlights
 - CQRS command and query handlers powered by event sourcing and domain-driven aggregates
