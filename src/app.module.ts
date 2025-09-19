@@ -5,9 +5,19 @@ import { MetricsController } from './infrastructure/metrics/metrics.controller';
 import { OrdersController } from './infrastructure/http/orders.controller';
 import { FileEventStore } from './infrastructure/eventstore/file-event-store';
 import { CreateOrderHandler } from './application/handlers/create-order.handler';
+import { ProjectionDatabase, SqliteOrderProjection } from './infrastructure/projections/sqlite-projection';
+import { CheckpointStore } from './infrastructure/projections/checkpoint-store';
+import { OrderProjector } from './infrastructure/projections/projector';
 
 @Module({
   controllers: [HealthController, MetricsController, OrdersController],
-  providers: [FileEventStore, CreateOrderHandler],
+  providers: [
+    FileEventStore,
+    CreateOrderHandler,
+    ProjectionDatabase,
+    SqliteOrderProjection,
+    CheckpointStore,
+    OrderProjector
+  ]
 })
 export class AppModule {}

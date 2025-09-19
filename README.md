@@ -66,6 +66,18 @@ Example response:
 
 Replaying the same request returns the same `orderId` without duplicating events.
 
+## Query the SQLite projection
+The background projector subscribes to the event store, upserts the `order_views` table in `data/read-model.sqlite`, and resumes from its checkpoint after restarts. Once the projector processes the `OrderCreated` event you can fetch the read model:
+
+```bash
+ORDER_ID="<orderId-from-create-response>"
+curl -s "http://localhost:8080/orders/${ORDER_ID}" | jq
+```
+
+The response reflects the projected state (`status`, `paymentRequested`, etc.). Check `/metrics` for the `projector_event_lag_seconds{projector="order-sqlite-projector"}` gauge to confirm the worker is keeping up.
+
+> 🧹 **Resets**: if you wipe `data/events.jsonl` to start fresh, also remove `data/read-model.sqlite*` so the projector rebuilds the read model from the new stream.
+
 ## Exercise the Event Store
 Run the manual script that appends an event and then replays the JSONL file:
 
