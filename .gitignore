@@ -1,0 +1,29 @@
+# compiled output
+/dist
+
+# dependencies
+/node_modules
+
+# logs
+npm-debug.log
+pnpm-debug.log
+yarn-error.log
+
+# environment variables
+.env
+.env.*
+
+# typescript build info
+*.tsbuildinfo
+
+# editor directories and files
+.idea/
+.vscode/
+.DS_Store
+
+# testing
+coverage/
+
+# package manager
+.pnp.cjs
+.pnp.loader.mjs
