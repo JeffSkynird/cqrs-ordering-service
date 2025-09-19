@@ -2,16 +2,21 @@ import { promises as fs } from 'fs';
 import { createReadStream } from 'fs';
 import { dirname, join } from 'path';
 import { createInterface } from 'readline';
+import { Injectable } from '@nestjs/common';
 import { DomainEvent, StoredEvent } from '../../domain/events';
 
 const DEFAULT_DATA_DIR = join(process.cwd(), 'data');
 const DEFAULT_EVENTS_FILE = join(DEFAULT_DATA_DIR, 'events.jsonl');
 
+@Injectable()
 export class FileEventStore {
   private initialized = false;
   private lastOffset = -1;
+  private readonly filePath: string;
 
-  constructor(private readonly filePath: string = DEFAULT_EVENTS_FILE) {}
+  constructor() {
+    this.filePath = DEFAULT_EVENTS_FILE;
+  }
 
   async append(event: DomainEvent): Promise<StoredEvent> {
     await this.ensureInitialized();
