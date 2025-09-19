@@ -22,7 +22,7 @@ async function bootstrap() {
   const PORT = Number(process.env.PORT || 8080);
   await app.listen(PORT);
   // eslint-disable-next-line no-console
-  console.log(`[cqrs-ordering-service] up on http://localhost:${PORT}  (/healthz, /metrics)`);
+  console.log(`[lab001] up on http://localhost:${PORT}  (/healthz, /metrics)`);
 }
 
 bootstrap();

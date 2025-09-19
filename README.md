@@ -36,6 +36,36 @@ These endpoints lay the groundwork for the broader CQRS architecture that will b
   http_request_duration_seconds_count{method="GET",path="/healthz",status="200"} 3
   ```
 
+## Create an Order via HTTP
+With the API running you can submit a `CreateOrder` command. The endpoint is idempotent by `client_request_id`:
+
+```bash
+curl -s http://localhost:8080/orders \
+  -H 'content-type: application/json' \
+  -d '{
+    "clientRequestId": "17b6e695-7cbd-4bd5-b62e-ff3f6ccab04c",
+    "customerId": "5e2ad359-8624-4bd9-8d8c-31f04b7ce986",
+    "currency": "USD",
+    "items": [
+      { "sku": "widget-001", "quantity": 2, "unitPrice": 25 }
+    ],
+    "payment": {
+      "method": "credit_card",
+      "amount": 50,
+      "currency": "USD"
+    }
+  }' | jq
+```
+
+Example response:
+```json
+{
+  "orderId": "be305f32-0153-4ec3-83e5-23e10d9e9596"
+}
+```
+
+Replaying the same request returns the same `orderId` without duplicating events.
+
 ## Exercise the Event Store
 Run the manual script that appends an event and then replays the JSONL file:
 
