@@ -1,6 +1,6 @@
 # CQRS Ordering Service
 
-Order Service implementing CQRS + Event Sourcing with SQLite projections + DDD, Outbox dispatcher, Prometheus metrics (`/metrics`), k6 load tests, and a Docker-friendly local setup built with NestJS and TypeScript.
+Order Service implementing CQRS + Event Sourcing with SQLite projections + DDD, an outbox + dispatcher pipeline, Prometheus metrics (`/metrics`), k6 load tests, and a Docker-friendly local setup built with NestJS and TypeScript.
 
 ## What Exists Today
 - `GET /healthz` returns a JSON heartbeat with the service identifier and timestamp for readiness checks
@@ -88,8 +88,36 @@ npx ts-node scripts/manual-event-store.ts
 
 The script ensures `data/events.jsonl` exists, writes a new event with an incremental `offset`, and prints all stored events.
 
-## Roadmap Highlights
-- CQRS command and query handlers powered by event sourcing and domain-driven aggregates
-- Outbox dispatcher to deliver domain events reliably to external systems
-- SQLite projection stores and read models tuned for fast queries
-- k6 load-testing scenarios plus a Docker-based developer experience for effortless local setup
+## Outbox + RabbitMQ Dispatcher
+Domain events appended to the file-based event store are mirrored into an outbox table (`data/outbox.sqlite`). A background dispatcher polls the table, retries with exponential backoff, and publishes each message to RabbitMQ using persistent delivery.
+
+### Start RabbitMQ
+```bash
+docker compose -f infra/docker-compose.yml up -d
+```
+RabbitMQ exposes AMQP on `5672` and the management UI on `15672` (`guest/guest` by default). Queue name defaults to `orders.integration-events` and can be overridden with `RABBITMQ_OUTBOX_QUEUE`.
+
+### Run the Service with the Dispatcher
+```bash
+cp .env.example .env # if you want a template; otherwise ensure .env contains the variables below
+npm install
+npm run dev
+```
+
+Relevant variables (already present in `.env`):
+- `RABBITMQ_URL` – AMQP connection string (defaults to `amqp://guest:guest@localhost:5672`)
+- `RABBITMQ_DEFAULT_USER`, `RABBITMQ_DEFAULT_PASS` – propagated to docker-compose
+- `OUTBOX_DISPATCHER_*` – poll interval, backoff, max attempts and failure injectors (`FAIL_ONCE`, `FAIL_EVENT_TYPE`, `FAIL_UNTIL_ATTEMPTS`)
+
+### Verify Delivery
+1. Create an order (see [Create an Order via HTTP](#create-an-order-via-http)).
+2. Inspect `data/outbox.sqlite` to see the row marked `sent`.
+3. In the RabbitMQ UI (`http://localhost:15672`), select the `orders.integration-events` queue and `Get Message(s)` to view the dispatched payload.
+
+### Simulate Failures
+Set one of the env flags and restart the app:
+- `OUTBOX_DISPATCHER_FAIL_ONCE=true` – first message fails once, then succeeds on retry.
+- `OUTBOX_DISPATCHER_FAIL_EVENT_TYPE=order.created` – all events of that type fail (useful to test max-attempt handling).
+- `OUTBOX_DISPATCHER_FAIL_UNTIL_ATTEMPTS=3` – fail until the dispatcher has retried three times.
+
+Logs show the retries and backoff, and the outbox row keeps track of attempts, next retry timestamp, and terminal failures.

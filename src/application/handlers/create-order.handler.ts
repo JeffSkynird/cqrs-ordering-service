@@ -9,6 +9,7 @@ import {
 import { generateId } from '../../common/id';
 import { now } from '../../common/clock';
 import { StoredEvent } from '../../domain/events';
+import { OutboxRepository } from '../../infrastructure/outbox/outbox-repo';
 
 export interface CreateOrderResult {
   orderId: string;
@@ -17,7 +18,10 @@ export interface CreateOrderResult {
 
 @Injectable()
 export class CreateOrderHandler {
-  constructor(private readonly eventStore: FileEventStore) {}
+  constructor(
+    private readonly eventStore: FileEventStore,
+    private readonly outboxRepository: OutboxRepository
+  ) {}
 
   async execute(command: CreateOrderCommand): Promise<CreateOrderResult> {
     const existing = await this.findByClientRequestId(command.clientRequestId);
@@ -53,7 +57,8 @@ export class CreateOrderHandler {
       }
     };
 
-    await this.eventStore.append(createdEvent);
+    const storedCreatedEvent = await this.eventStore.append(createdEvent);
+    this.outboxRepository.addFromEvent(storedCreatedEvent);
 
     if (command.payment) {
       const paymentEvent: PaymentRequestedEvent = {
@@ -73,7 +78,8 @@ export class CreateOrderHandler {
         }
       };
 
-      await this.eventStore.append(paymentEvent);
+      const storedPaymentEvent = await this.eventStore.append(paymentEvent);
+      this.outboxRepository.addFromEvent(storedPaymentEvent);
     }
 
     return { orderId, created: true };
