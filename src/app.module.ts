@@ -8,6 +8,9 @@ import { CreateOrderHandler } from './application/handlers/create-order.handler'
 import { ProjectionDatabase, SqliteOrderProjection } from './infrastructure/projections/sqlite-projection';
 import { CheckpointStore } from './infrastructure/projections/checkpoint-store';
 import { OrderProjector } from './infrastructure/projections/projector';
+import { OutboxRepository } from './infrastructure/outbox/outbox-repo';
+import { OutboxDispatcher } from './infrastructure/outbox/dispatcher';
+import { RabbitIntegrationEventPublisher } from './infrastructure/outbox/rabbit-publisher';
 
 @Module({
   controllers: [HealthController, MetricsController, OrdersController],
@@ -17,7 +20,10 @@ import { OrderProjector } from './infrastructure/projections/projector';
     ProjectionDatabase,
     SqliteOrderProjection,
     CheckpointStore,
-    OrderProjector
+    OrderProjector,
+    OutboxRepository,
+    RabbitIntegrationEventPublisher,
+    OutboxDispatcher
   ]
 })
 export class AppModule {}

@@ -1,3 +1,4 @@
 # Event Store generated data
 *.jsonl
 read-model.sqlite*
+outbox.sqlite*

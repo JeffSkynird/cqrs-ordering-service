@@ -1,10 +1,12 @@
 import 'reflect-metadata';
+import { config as loadEnv } from 'dotenv';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { MetricsMiddleware } from './infrastructure/metrics/metrics.middleware';
 
 async function bootstrap() {
+  loadEnv();
   const app = await NestFactory.create(AppModule, { abortOnError: true });
 
   // Global validation
