@@ -1,0 +1,30 @@
+groups:
+  - name: slo.http
+    rules:
+      - record: slo:http_request_error_ratio5m
+        expr: sum(rate(http_server_responses_total{status_class=~"4xx|5xx"}[5m]))
+          /
+          clamp_min(sum(rate(http_server_responses_total[5m])), 1e-6)
+
+      - record: slo:http_request_error_ratio30m
+        expr: sum(rate(http_server_responses_total{status_class=~"4xx|5xx"}[30m]))
+          /
+          clamp_min(sum(rate(http_server_responses_total[30m])), 1e-6)
+
+      - alert: HTTPErrorBudgetBurnWarning
+        expr: (slo:http_request_error_ratio5m / 0.01) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'HTTP error budget burn warning'
+          description: '5m burn rate {{ $value | printf "%.2f" }} > 2× budget (SLO 99%).'
+
+      - alert: HTTPErrorBudgetBurnCritical
+        expr: (slo:http_request_error_ratio30m / 0.01) > 4
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: 'HTTP error budget burn critical'
+          description: '30m burn rate {{ $value | printf "%.2f" }} > 4× budget (SLO 99%).'

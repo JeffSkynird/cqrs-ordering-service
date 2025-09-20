@@ -3,7 +3,7 @@ import { config as loadEnv } from 'dotenv';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
-import { MetricsMiddleware } from './infrastructure/metrics/metrics.middleware';
+import { httpMetricsMiddleware } from './infrastructure/metrics/prom';
 
 async function bootstrap() {
   loadEnv();
@@ -18,8 +18,7 @@ async function bootstrap() {
   );
 
   // HTTP Metrics for all paths
-  const metricsMiddleware = new MetricsMiddleware();
-  app.use(metricsMiddleware.use.bind(metricsMiddleware));
+  app.use(httpMetricsMiddleware);
 
   const PORT = Number(process.env.PORT || 8080);
   await app.listen(PORT);

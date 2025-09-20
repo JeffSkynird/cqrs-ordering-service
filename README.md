@@ -88,6 +88,29 @@ npx ts-node scripts/manual-event-store.ts
 
 The script ensures `data/events.jsonl` exists, writes a new event with an incremental `offset`, and prints all stored events.
 
+## Observability Stack
+
+The service exports Prometheus metrics (`/metrics`). To visualize them and evaluate the SLO alert locally:
+
+1. Start the supporting containers:
+   ```bash
+   docker compose -f infra/docker-compose.yml up -d prometheus grafana
+   ```
+   Prometheus is exposed at `http://localhost:9090` and scrapes your NestJS app directly when you run `npm run dev` (`http://localhost:8080/metrics`). Grafana is served at `http://localhost:3000`; inside Grafana create a Prometheus data source pointing to `http://prometheus:9090` so it reaches the Prometheus service on the compose network.
+2. Import the prebuilt dashboard (`infra/grafana/dashboard.json`) from the Grafana UI (`Dashboards → Import → Upload JSON`) and, when prompted, map `DS_PROMETHEUS` to your Prometheus data source.
+3. Trigger traffic (e.g. create orders, ping `/healthz`, simulate errors) and watch the panels:
+   - `Requests per Second` splits the counter by status class.
+   - `HTTP Latency p95 (ms)` uses Prometheus histogram quantiles over `http_server_request_duration_seconds`.
+   - `HTTP Error Rate (%)` shows the 5xx percentage.
+   - `Projector Lag (s)` reflects the `projector_event_lag_seconds` gauge.
+4. In Prometheus (`Alerts` tab) you will find the burn-rate rules defined in `infra/prometheus/rules/burn-rate.yml`. Force some 5xx responses to see `HTTPErrorBudgetBurnWarning`/`Critical` fire (they compare the short- and medium-term error ratios against a 99% SLO).
+
+Grafana overview:
+![Grafana dashboard](images/dashboard-grafana.png)
+
+Prometheus alert status:
+![Prometheus alerts](images/prometheus-rules.png)
+
 ## Outbox + RabbitMQ Dispatcher
 Domain events appended to the file-based event store are mirrored into an outbox table (`data/outbox.sqlite`). A background dispatcher polls the table, retries with exponential backoff, and publishes each message to RabbitMQ using persistent delivery.
 
