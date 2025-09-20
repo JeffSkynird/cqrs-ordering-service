@@ -1,10 +1,10 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { Gauge, Registry } from 'prom-client';
 import { FileEventStore } from '../eventstore/file-event-store';
 import { SqliteOrderProjection } from './sqlite-projection';
 import { CheckpointStore } from './checkpoint-store';
 import type { OrderEvent } from '../../domain/aggregates/order';
 import type { StoredEvent } from '../../domain/events';
+import { setProjectorLag } from '../metrics/prom';
 
 const PROJECTOR_NAME = 'order-sqlite-projector';
 const DEFAULT_POLL_INTERVAL_MS = 500;
@@ -15,7 +15,6 @@ export class OrderProjector implements OnModuleInit, OnModuleDestroy {
   private readonly pollIntervalMs: number;
   private running = false;
   private loopPromise: Promise<void> | null = null;
-  private eventLagGauge: Gauge<string> | null = null;
 
   constructor(
     private readonly eventStore: FileEventStore,
@@ -80,11 +79,6 @@ export class OrderProjector implements OnModuleInit, OnModuleDestroy {
   }
 
   private updateLagMetric(event: StoredEvent): void {
-    const gauge = this.ensureEventLagGauge();
-    if (!gauge) {
-      return;
-    }
-
     const eventTimestamp = Date.parse(event.metadata.ts);
     if (Number.isNaN(eventTimestamp)) {
       return;
@@ -92,45 +86,7 @@ export class OrderProjector implements OnModuleInit, OnModuleDestroy {
 
     const now = Date.now();
     const lagSeconds = Math.max(0, (now - eventTimestamp) / 1000);
-    gauge.labels({ projector: PROJECTOR_NAME }).set(lagSeconds);
-  }
-
-  private ensureEventLagGauge(): Gauge<string> | null {
-    if (this.eventLagGauge) {
-      return this.eventLagGauge;
-    }
-
-    const registry = this.tryGetMetricsRegistry();
-    if (!registry) {
-      return null;
-    }
-
-    const gauge = new Gauge({
-      name: 'projector_event_lag_seconds',
-      help: 'Lag in seconds between the latest processed event and now',
-      labelNames: ['projector'] as const
-    });
-
-    try {
-      registry.registerMetric(gauge);
-      this.eventLagGauge = gauge;
-    } catch (error: unknown) {
-      // Metric might already be registered; retrieve it instead of failing the worker.
-      const existing = registry.getSingleMetric('projector_event_lag_seconds');
-      if (existing && existing instanceof Gauge) {
-        this.eventLagGauge = existing as Gauge<string>;
-      } else {
-        this.logger.warn('Unable to register projector_event_lag_seconds metric');
-        this.eventLagGauge = null;
-      }
-    }
-
-    return this.eventLagGauge;
-  }
-
-  private tryGetMetricsRegistry(): Registry | null {
-    const registry = (global as any).__metricsRegistry as Registry | undefined;
-    return registry ?? null;
+    setProjectorLag(PROJECTOR_NAME, lagSeconds);
   }
 
   private isOrderEvent(event: StoredEvent): event is StoredEvent & OrderEvent {

@@ -1,5 +1,5 @@
 import { Controller, Get, Header } from '@nestjs/common';
-import { getRegistry } from './metrics.middleware';
+import { getRegistry } from './prom';
 
 @Controller()
 export class MetricsController {
