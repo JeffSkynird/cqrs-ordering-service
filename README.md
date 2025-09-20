@@ -1,19 +1,45 @@
-# CQRS Ordering Service
+# 🚀 CQRS Ordering Service
 
-Order Service implementing CQRS + Event Sourcing with SQLite projections + DDD, an outbox + dispatcher pipeline, Prometheus metrics (`/metrics`), k6 load tests, and a Docker-friendly local setup built with NestJS and TypeScript.
+Order Service implementing CQRS + Event Sourcing with SQLite projections, an outbox/dispatcher pipeline, Prometheus metrics (`/metrics`), k6 load testing, and a Docker-friendly NestJS + TypeScript stack.
 
-## What Exists Today
-- `GET /healthz` returns a JSON heartbeat with the service identifier and timestamp for readiness checks
-- `GET /metrics` exposes Prometheus-friendly metrics so the service can be scraped and observed
+## ✨ Highlights
+- CQRS command side with an idempotent `CreateOrder` flow backed by a file-based event store
+- SQLite read model projections that resume from checkpoints after restarts
+- Reliable outbox mirrored to RabbitMQ with exponential backoff, fault injectors, and delivery tracking
+- Observability with Prometheus metrics, Grafana dashboards, and SLO burn-rate alerts
+- Local developer ergonomics: `.env` template, Docker Compose services, and helper scripts
 
-These endpoints lay the groundwork for the broader CQRS architecture that will be layered in next.
+## ⚙️ Quick Start
+1. **Prepare env vars**
+   ```bash
+   cp .env.example .env
+   ```
+   Ensure the following are set (defaults already present in `.env`):
+   - `RABBITMQ_URL` (e.g. `amqp://guest:guest@localhost:5672`)
+   - `RABBITMQ_DEFAULT_USER` / `RABBITMQ_DEFAULT_PASS` for Docker Compose
+   - `OUTBOX_DISPATCHER_*` knobs for polling, backoff, and failure injection
 
-## Try the Endpoints
-- **Health probe**: 
+2. **Install & launch the service**
+   ```bash
+   npm install
+   npm run dev
+   ```
+   The API listens on `http://localhost:8080` with `/healthz` and `/metrics` available immediately.
+
+3. **Bring up supporting services (optional but recommended)**
+   ```bash
+   docker compose -f infra/docker-compose.yml up -d
+   ```
+   - Prometheus: `http://localhost:9090`
+   - Grafana: `http://localhost:3000`
+   - RabbitMQ UI: `http://localhost:15672` (`guest/guest`)
+
+## 🔍 Service Endpoints
+- **Health probe**
   ```bash
   curl -s http://localhost:8080/healthz | jq
   ```
-  Example response:
+  Example:
   ```json
   {
     "ok": true,
@@ -22,11 +48,10 @@ These endpoints lay the groundwork for the broader CQRS architecture that will b
   }
   ```
 
-- **Prometheus metrics**: 
+- **Prometheus metrics**
   ```bash
   curl -s http://localhost:8080/metrics | grep -A12 http_server_request_duration_seconds
   ```
-
   Example snippet:
   ```
   # HELP http_request_duration_seconds HTTP request duration histogram
@@ -36,8 +61,8 @@ These endpoints lay the groundwork for the broader CQRS architecture that will b
   http_request_duration_seconds_count{method="GET",path="/healthz",status="200"} 3
   ```
 
-## Create an Order via HTTP
-With the API running you can submit a `CreateOrder` command. The endpoint is idempotent by `client_request_id`:
+## 📝 Create an Order
+Submit a `CreateOrder` command; the endpoint is idempotent on `clientRequestId`:
 
 ```bash
 curl -s http://localhost:8080/orders \
@@ -57,90 +82,75 @@ curl -s http://localhost:8080/orders \
   }' | jq
 ```
 
-Example response:
+Response:
 ```json
 {
   "orderId": "be305f32-0153-4ec3-83e5-23e10d9e9596"
 }
 ```
+Replaying the same payload returns the identical `orderId` without duplicating events.
 
-Replaying the same request returns the same `orderId` without duplicating events.
-
-## Query the SQLite projection
-The background projector subscribes to the event store, upserts the `order_views` table in `data/read-model.sqlite`, and resumes from its checkpoint after restarts. Once the projector processes the `OrderCreated` event you can fetch the read model:
+## 🔎 Query the Projection
+The projector consumes the event store, upserts `order_views` in `data/read-model.sqlite`, and resumes from its checkpoint on restart.
 
 ```bash
 ORDER_ID="<orderId-from-create-response>"
 curl -s "http://localhost:8080/orders/${ORDER_ID}" | jq
 ```
 
-The response reflects the projected state (`status`, `paymentRequested`, etc.). Check `/metrics` for the `projector_event_lag_seconds{projector="order-sqlite-projector"}` gauge to confirm the worker is keeping up.
+The response reflects projected fields such as `status` and `paymentRequested`. Check `/metrics` for `projector_event_lag_seconds{projector="order-sqlite-projector"}` to ensure the worker keeps up.
 
-> 🧹 **Resets**: if you wipe `data/events.jsonl` to start fresh, also remove `data/read-model.sqlite*` so the projector rebuilds the read model from the new stream.
+> 🧹 **Reset tip**: If you wipe `data/events.jsonl` to start fresh, also remove `data/read-model.sqlite*` so the projector rebuilds from the new stream.
 
-## Exercise the Event Store
-Run the manual script that appends an event and then replays the JSONL file:
+## 🪄 Event Store Playground
+Append a manual event and replay the store:
 
 ```bash
 cd app/node
 npx ts-node scripts/manual-event-store.ts
 ```
 
-The script ensures `data/events.jsonl` exists, writes a new event with an incremental `offset`, and prints all stored events.
+The script ensures `data/events.jsonl` exists, writes an event with an incremental `offset`, and prints all stored events.
 
-## Observability Stack
+## 📊 Observability Stack
+1. Launch Prometheus & Grafana (see [Quick Start](#-quick-start)).
+2. In Grafana (`Dashboards → Import → Upload JSON`), import `infra/grafana/dashboard.json` and map `DS_PROMETHEUS` to `http://prometheus:9090`.
+3. Generate traffic (create orders, call `/healthz`, simulate errors) and inspect panels:
+   - `Requests per Second` highlights status-class breakdowns
+   - `HTTP Latency p95 (ms)` uses Prometheus histogram quantiles
+   - `HTTP Error Rate (%)` monitors 5xx ratios
+   - `Projector Lag (s)` surfaces `projector_event_lag_seconds`
+4. In Prometheus (`Alerts` tab) review burn-rate rules from `infra/prometheus/rules/burn-rate.yml`. Induce 5xx responses to trigger `HTTPErrorBudgetBurnWarning` or `HTTPErrorBudgetBurnCritical`.
 
-The service exports Prometheus metrics (`/metrics`). To visualize them and evaluate the SLO alert locally:
-
-1. Start the supporting containers:
-   ```bash
-   docker compose -f infra/docker-compose.yml up -d prometheus grafana
-   ```
-   Prometheus is exposed at `http://localhost:9090` and scrapes your NestJS app directly when you run `npm run dev` (`http://localhost:8080/metrics`). Grafana is served at `http://localhost:3000`; inside Grafana create a Prometheus data source pointing to `http://prometheus:9090` so it reaches the Prometheus service on the compose network.
-2. Import the prebuilt dashboard (`infra/grafana/dashboard.json`) from the Grafana UI (`Dashboards → Import → Upload JSON`) and, when prompted, map `DS_PROMETHEUS` to your Prometheus data source.
-3. Trigger traffic (e.g. create orders, ping `/healthz`, simulate errors) and watch the panels:
-   - `Requests per Second` splits the counter by status class.
-   - `HTTP Latency p95 (ms)` uses Prometheus histogram quantiles over `http_server_request_duration_seconds`.
-   - `HTTP Error Rate (%)` shows the 5xx percentage.
-   - `Projector Lag (s)` reflects the `projector_event_lag_seconds` gauge.
-4. In Prometheus (`Alerts` tab) you will find the burn-rate rules defined in `infra/prometheus/rules/burn-rate.yml`. Force some 5xx responses to see `HTTPErrorBudgetBurnWarning`/`Critical` fire (they compare the short- and medium-term error ratios against a 99% SLO).
-
-Grafana overview:
+Dashboard previews:
 ![Grafana dashboard](images/dashboard-grafana.png)
 
-Prometheus alert status:
 ![Prometheus alerts](images/prometheus-rules.png)
 
-## Outbox + RabbitMQ Dispatcher
-Domain events appended to the file-based event store are mirrored into an outbox table (`data/outbox.sqlite`). A background dispatcher polls the table, retries with exponential backoff, and publishes each message to RabbitMQ using persistent delivery.
+## 📮 Outbox & RabbitMQ
+Domain events are mirrored into `data/outbox.sqlite`. A dispatcher polls the table, retries with exponential backoff, and publishes messages to RabbitMQ using persistent delivery.
 
-### Start RabbitMQ
+### 🐇 Start RabbitMQ
 ```bash
 docker compose -f infra/docker-compose.yml up -d
 ```
-RabbitMQ exposes AMQP on `5672` and the management UI on `15672` (`guest/guest` by default). Queue name defaults to `orders.integration-events` and can be overridden with `RABBITMQ_OUTBOX_QUEUE`.
+Default queue: `orders.integration-events` (override via `RABBITMQ_OUTBOX_QUEUE`). AMQP is exposed on `5672`; the management UI runs on `15672`.
 
-### Run the Service with the Dispatcher
+### 🚀 Run the Service with the Dispatcher
 ```bash
-cp .env.example .env # if you want a template; otherwise ensure .env contains the variables below
-npm install
 npm run dev
 ```
+The dispatcher starts alongside the API when the relevant env vars are present.
 
-Relevant variables (already present in `.env`):
-- `RABBITMQ_URL` – AMQP connection string (defaults to `amqp://guest:guest@localhost:5672`)
-- `RABBITMQ_DEFAULT_USER`, `RABBITMQ_DEFAULT_PASS` – propagated to docker-compose
-- `OUTBOX_DISPATCHER_*` – poll interval, backoff, max attempts and failure injectors (`FAIL_ONCE`, `FAIL_EVENT_TYPE`, `FAIL_UNTIL_ATTEMPTS`)
+### ✅ Verify Delivery
+1. Create an order (see [Create an Order](#-create-an-order)).
+2. Inspect `data/outbox.sqlite` and confirm the row is marked `sent`.
+3. In the RabbitMQ UI, open `orders.integration-events` and use **Get Message(s)** to view the payload.
 
-### Verify Delivery
-1. Create an order (see [Create an Order via HTTP](#create-an-order-via-http)).
-2. Inspect `data/outbox.sqlite` to see the row marked `sent`.
-3. In the RabbitMQ UI (`http://localhost:15672`), select the `orders.integration-events` queue and `Get Message(s)` to view the dispatched payload.
+### 🧪 Simulate Failures
+Toggle failure injectors and restart the app:
+- `OUTBOX_DISPATCHER_FAIL_ONCE=true` – first message fails once, then succeeds
+- `OUTBOX_DISPATCHER_FAIL_EVENT_TYPE=order.created` – all matching events fail until the flag is cleared
+- `OUTBOX_DISPATCHER_FAIL_UNTIL_ATTEMPTS=3` – fail until the dispatcher reaches the specified attempt count
 
-### Simulate Failures
-Set one of the env flags and restart the app:
-- `OUTBOX_DISPATCHER_FAIL_ONCE=true` – first message fails once, then succeeds on retry.
-- `OUTBOX_DISPATCHER_FAIL_EVENT_TYPE=order.created` – all events of that type fail (useful to test max-attempt handling).
-- `OUTBOX_DISPATCHER_FAIL_UNTIL_ATTEMPTS=3` – fail until the dispatcher has retried three times.
-
-Logs show the retries and backoff, and the outbox row keeps track of attempts, next retry timestamp, and terminal failures.
+Dispatcher logs show retry/backoff behavior, and the outbox row tracks attempts, next retry timestamps, and terminal failures.
